@@ -51,15 +51,16 @@ class ElasticSearchDB( object ):
     self.__tryToConnect()
   
   ########################################################################  
-  def query( self, query ):
-    """It exexutes a query and it returns the result
+  def query( self, index, query = None ):
+    """It executes a query and it returns the result
     query is a dictionary. More info: search for elasticsearch dsl
     
     :param self: self reference
+    :param index: Name of the index to perform the query on
     :param dict query: It is the query in ElasticSerach DSL language
      
     """
-    return self.__client.search( query )
+    return self.__client.search( index = index, body = query )
   
   ########################################################################
   def __tryToConnect( self ):
@@ -131,3 +132,62 @@ class ElasticSearchDB( object ):
       result = S_ERROR( e )
     return result
     
+  def addToIndex( self, index, docType, mapping ):
+    """
+    :param str index: index to store the document in
+    :param dict mapping: contents to be stored in the index
+    """
+    try:
+      self.__client.create( index = index, doc_type = docType, body = mapping, refresh = True )
+    except Exception as e:
+      return S_ERROR( e )
+    return S_OK( 'Document added' )
+
+  def getDocCount( self, indexName ):
+    """
+    Retrieve the number of documents in an index
+    :param indexName: name of the index
+    """
+    try:
+      result = self.__client.indices.stats( index = indexName, metric = [ 'docs' ] )
+      nDocs = result[ 'indices' ][ indexName ][ 'total' ][ 'docs' ][ 'count' ]
+    except Exception as e:
+      return S_ERROR( e )
+    return S_OK( nDocs )
+
+  def deleteIndexes( self, indexList ):
+    """
+    Deletes indexes from ElasticSearch
+    :param indexList: list of indexes to be deleted
+    """
+    try:
+      self.__client.indices.delete( indexList )
+    except Exception, e:
+      return S_ERROR( e )
+
+    return S_OK( 'Index(es) deleted' )
+
+  def deleteDocuments( self, query, index = '_all' ):
+    """
+    Delete documents from the given indexes
+    :param query: ElasticSearch DSL language query that documents to be deleted should match
+    :param index: Index to delete from. If not provided, it will delete from all indexes
+    """
+    search = self.__client.search( index = index, body = query, search_type = 'scan', scroll = '5m' )
+
+    while True:
+      try:
+        # Git the next page of results.
+        scroll = self.__client.scroll( scroll_id = search[ '_scroll_id' ], scroll = '5m' )
+      # Since scroll throws an error catch it and break the loop.
+      except Exception, e:
+        break
+      # We have results initialize the bulk variable.
+      bulk = ''
+      for result in scroll[ 'hits' ][ 'hits' ]:
+        bulk = bulk + '{ "delete" : { "_index" : "' + str(result['_index']) + '", "_type" : "' + str(result['_type']) + '", "_id" : "' + str(result['_id']) + '" } }\n'
+      # Finally do the deleting.
+      if bulk:
+        self.__client.bulk( body = bulk )
+
+    return S_OK( 'Documents deleted' )

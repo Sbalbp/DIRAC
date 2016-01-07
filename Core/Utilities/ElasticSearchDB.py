@@ -60,7 +60,10 @@ class ElasticSearchDB( object ):
     :param dict query: It is the query in ElasticSerach DSL language
      
     """
-    return self.__client.search( index = index, body = query )
+    try:
+      return S_OK( self.__client.search( index = index, body = query ) )
+    except Exception as e:
+      return S_ERROR( e )
   
   ########################################################################
   def __tryToConnect( self ):
@@ -106,7 +109,10 @@ class ElasticSearchDB( object ):
     it checks the existance of an index
     :param str indexName: the name of the index
     """
-    return self.__client.indices.exists( indexName )
+    try:
+      return S_OK( self.__client.indices.exists( indexName ) )
+    except Exception as e:
+      return S_ERROR( e )
   
   ########################################################################
   def createFullIndexName( self, indexName ):
@@ -162,7 +168,7 @@ class ElasticSearchDB( object ):
     """
     try:
       self.__client.indices.delete( indexList )
-    except Exception, e:
+    except Exception as e:
       return S_ERROR( e )
 
     return S_OK( 'Index(es) deleted' )
@@ -180,7 +186,7 @@ class ElasticSearchDB( object ):
         # Git the next page of results.
         scroll = self.__client.scroll( scroll_id = search[ '_scroll_id' ], scroll = '5m' )
       # Since scroll throws an error catch it and break the loop.
-      except Exception, e:
+      except Exception as e:
         break
       # We have results initialize the bulk variable.
       bulk = ''
@@ -188,6 +194,11 @@ class ElasticSearchDB( object ):
         bulk = bulk + '{ "delete" : { "_index" : "' + str(result['_index']) + '", "_type" : "' + str(result['_type']) + '", "_id" : "' + str(result['_id']) + '" } }\n'
       # Finally do the deleting.
       if bulk:
-        self.__client.bulk( body = bulk )
+        try:
+          self.__client.bulk( body = bulk )
+        except Exception as e:
+          return S_ERROR( e )
+      else:
+        return S_ERROR( 'Nothing to delete' )
 
     return S_OK( 'Documents deleted' )
